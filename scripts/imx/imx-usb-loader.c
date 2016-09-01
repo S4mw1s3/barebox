@@ -32,6 +32,7 @@
 #include <stdlib.h>
 #include <libusb.h>
 #include <getopt.h>
+#include <endian.h>
 #include <arpa/inet.h>
 #include <linux/kernel.h>
 
@@ -45,7 +46,6 @@
 #define FT_LOAD_ONLY	0x00
 
 int verbose;
-static int skip_image_dcd;
 static struct libusb_device_handle *usb_dev_handle;
 static struct usb_id *usb_id;
 
@@ -67,7 +67,7 @@ struct mach_id {
 
 struct usb_work {
 	char filename[256];
-	unsigned char dcd;
+	unsigned char do_dcd_once;
 	unsigned char plug;
 };
 
@@ -872,7 +872,6 @@ static int get_dcd_range_old(const struct imx_flash_header *hdr,
 static int write_dcd_table_old(const struct imx_flash_header *hdr,
 			       const unsigned char *file_start, unsigned cnt)
 {
-	unsigned val;
 	unsigned char *dcd_end;
 	unsigned char* dcd;
 	int err = get_dcd_range_old(hdr, file_start, cnt, &dcd, &dcd_end);
@@ -882,28 +881,26 @@ static int write_dcd_table_old(const struct imx_flash_header *hdr,
 	printf("writing DCD table...\n");
 
 	while (dcd < dcd_end) {
-		unsigned type = (dcd[0] << 0) | (dcd[1] << 8) | (dcd[2] << 16) | (dcd[3] << 24);
-		unsigned addr = (dcd[4] << 0) | (dcd[5] << 8) | (dcd[6] << 16) | (dcd[7] << 24);
-		val = (dcd[8] << 0) | (dcd[9] << 8) | (dcd[10] << 16) | (dcd[11] << 24);
-		dcd += 12;
+		struct imx_dcd_rec_v1 *rec = (struct imx_dcd_rec_v1 *) dcd;
+		unsigned type = le32toh(rec->type);
+		dcd += sizeof *rec;
 
 		switch (type) {
 		case 1:
-			if (verbose > 1)
-				printf("type=%08x *0x%08x = 0x%08x\n", type, addr, val);
-			err = write_memory(addr, val, 1);
-			if (err < 0)
-				return err;
-			break;
+		case 2:
 		case 4:
 			if (verbose > 1)
-				printf("type=%08x *0x%08x = 0x%08x\n", type, addr, val);
-			err = write_memory(addr, val, 4);
+				printf("type=%08x *0x%08x = 0x%08x\n", type,
+					le32toh(rec->addr),
+					le32toh(rec->val));
+			err = write_memory(le32toh(rec->addr),
+					   le32toh(rec->val), type);
 			if (err < 0)
 				return err;
 			break;
 		default:
-			printf("!!!unknown type=%08x *0x%08x = 0x%08x\n", type, addr, val);
+			printf("WARNING: unknown DCD type=%08x ignored\n",
+			       type);
 		}
 	}
 
@@ -979,9 +976,6 @@ static int perform_dcd(unsigned char *p, const unsigned char *file_start,
 	struct imx_flash_header *ohdr = (struct imx_flash_header *)p;
 	struct imx_flash_header_v2 *hdr = (struct imx_flash_header_v2 *)p;
 	int ret = 0;
-
-	if (skip_image_dcd)
-		return 0;
 
 	switch (usb_id->mach_id->header_type) {
 	case HDR_MX51:
@@ -1066,13 +1060,13 @@ static int process_header(struct usb_work *curr, unsigned char *buf, int cnt,
 			return ret;
 		}
 
-		if (curr->dcd) {
+		if (curr->do_dcd_once) {
 			ret = perform_dcd(p, buf, cnt);
 			if (ret < 0) {
 				printf("!!perform_dcd returned %i\n", ret);
 				return ret;
 			}
-			curr->dcd = 0;
+			curr->do_dcd_once = 0;
 		}
 
 		if (*p_plugin && (!curr->plug) && (!header_cnt)) {
@@ -1264,6 +1258,8 @@ int main(int argc, char *argv[])
 	int opt;
 	char *initfile = NULL;
 
+	w.do_dcd_once = 1;
+
 	while ((opt = getopt(argc, argv, "cvhi:s")) != -1) {
 		switch (opt) {
 		case 'c':
@@ -1278,7 +1274,7 @@ int main(int argc, char *argv[])
 			initfile = optarg;
 			break;
 		case 's':
-			skip_image_dcd = 1;
+			w.do_dcd_once = 0;
 			break;
 		default:
 			exit(1);
@@ -1292,7 +1288,6 @@ int main(int argc, char *argv[])
 	}
 
 	w.plug = 1;
-	w.dcd = 1;
 	strncpy(w.filename, argv[optind], sizeof(w.filename) - 1);
 
 	r = libusb_init(NULL);
