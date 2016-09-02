@@ -1,0 +1,3 @@
+[submodule "usbpush"]
+	path = usbpush
+	url = https://github.com/S4mw1s3/usbpush

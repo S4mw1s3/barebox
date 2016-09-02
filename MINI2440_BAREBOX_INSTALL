@@ -1,0 +1,10 @@
+On mini2440 in NOR flash:
+
+[MINI2440] q to enter vivi shell
+[MINI2440] load ram 0x31000000 <barebox.bin size> u
+[HOST] sudo ./usbpush/usbpush/usbpush -f barebox.bin
+[MINI2440] go 0x31000000
+[MINI2440] dhcp
+[MINI2440] tftp barebox.bin
+[MINI2440] barebox_update -d /dev/nand0.bb barebox.bin
+[MINI2440] reset
