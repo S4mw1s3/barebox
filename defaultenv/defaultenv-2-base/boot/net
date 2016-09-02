@@ -2,14 +2,14 @@
 
 path="/mnt/tftp"
 
-global.bootm.image="${path}/${global.user}-linux-${global.hostname}"
+global.bootm.image="${path}/uImage-mini2440"
 
 oftree="${path}/${global.user}-oftree-${global.hostname}"
 if [ -f "${oftree}" ]; then
 	global.bootm.oftree="$oftree"
 fi
 
-nfsroot="/home/${global.user}/nfsroot/${global.hostname}"
+nfsroot="/home/sam/Documenten/buildroot/output/images/myrootfs"
 bootargs-ip
 
 initramfs="${path}/${global.user}-initramfs-${global.hostname}"
